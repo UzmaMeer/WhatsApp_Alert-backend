@@ -3,4 +3,4 @@ uvicorn
 requests
 motor
 python-dotenv
-itsdangerous   <-- 🟢 Ye Add Karein
+itsdangerous   
