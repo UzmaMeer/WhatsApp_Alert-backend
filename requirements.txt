@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+requests
+redis
+celery           <-- 🟢 ADDED (Replaces rq)
+motor
+pymongo
+Authlib
+python-multipart
+google-generativeai
+pydantic
+python-dotenv
+httpx
+itsdangerous
+ffmpeg-python
