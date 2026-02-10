@@ -8,7 +8,8 @@ import logging
 # --- Import Config and Routes ---
 from config import BASE_PUBLIC_URL
 # 🟢 CRITICAL: We import both auth and general routes here
-from routes import auth, general  
+# Make sure you have a 'routes' folder with auth.py and general.py
+from routes import auth, general   
 from database import shop_collection
 
 # --- 🟢 SYSTEM START PRINT ---
@@ -17,7 +18,7 @@ print("\n\n🛑 SYSTEM RESTARTING: Loading Routes...\n")
 app = FastAPI()
 
 # --- Middleware Setup ---
-origins = ["*"]  # Allow all for testing
+origins = ["*"]  # Allow all for testing (Frontend se connect karne ke liye zaroori)
 app.add_middleware(
     CORSMiddleware, 
     allow_origins=origins, 
@@ -25,6 +26,8 @@ app.add_middleware(
     allow_headers=["*"], 
     allow_credentials=True
 )
+
+# Session aur HTTPS Proxy Headers (Render ke liye zaroori)
 app.add_middleware(SessionMiddleware, secret_key="SECRET_KEY", https_only=True)
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
 
