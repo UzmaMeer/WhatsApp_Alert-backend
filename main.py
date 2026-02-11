@@ -11,11 +11,13 @@ from database import shop_collection
 app = FastAPI()
 
 # --- Middleware ---
+# Ensure your live frontend URL is allowed
 app.add_middleware(
     CORSMiddleware, 
     allow_origins=[
-        "https://shopify-alert.web.app", # Your live frontend
-        "https://admin.shopify.com"
+        "https://shopify-alert.web.app", 
+        "https://admin.shopify.com",
+        "http://localhost:3000"
     ], 
     allow_methods=["*"], 
     allow_headers=["*"], 
@@ -28,8 +30,14 @@ app.add_middleware(
     https_only=True
 )
 
+# Registering Routes
 app.include_router(auth.router)
 app.include_router(general.router)
+
+# 🟢 NEW: Health Check for Frontend Fallback Logic
+@app.get("/status")
+async def health_check():
+    return {"status": "ok", "message": "Railway Backend is Active"}
 
 @app.get("/")
 async def home(request: Request, shop: str = None):
@@ -37,8 +45,8 @@ async def home(request: Request, shop: str = None):
     if shop:
         existing_shop = await shop_collection.find_one({"shop": shop})
         if existing_shop and existing_shop.get("access_token"):
-            # Success: Go to your LIVE frontend deployment
+            # SUCCESS: Redirect to your Deployed Frontend
             return RedirectResponse(f"https://shopify-alert.web.app?shop={shop}")
 
-    # Not installed? Go to OAuth installation
+    # Not installed? Start Shopify OAuth flow
     return RedirectResponse(url=f"/api/auth?shop={shop}" if shop else "/api/auth")
