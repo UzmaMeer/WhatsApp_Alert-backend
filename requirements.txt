@@ -4,3 +4,4 @@ requests
 motor
 python-dotenv
 itsdangerous   
+authlib
