@@ -3,5 +3,6 @@ uvicorn
 requests
 motor
 python-dotenv
-itsdangerous   
+itsdangerous
 authlib
+httpx
