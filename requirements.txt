@@ -5,4 +5,4 @@ motor
 python-dotenv
 itsdangerous
 authlib
-httpx
+httpx==0.27.0
