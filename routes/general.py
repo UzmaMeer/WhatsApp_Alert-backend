@@ -15,7 +15,7 @@ def send_whatsapp_message(phone_number, template_name):
     print(f"📤 [DEBUG] Sending WhatsApp Template '{template_name}' to: {phone_number}...") 
     
     if not WA_PHONE_NUMBER_ID or not WA_ACCESS_TOKEN:
-        print("⚠️ [ERROR] WhatsApp Keys are missing in .env file!")
+        print("⚠️ [ERROR] WhatsApp Keys are missing in configuration!")
         return False
 
     url = f"https://graph.facebook.com/v18.0/{WA_PHONE_NUMBER_ID}/messages"
@@ -24,6 +24,7 @@ def send_whatsapp_message(phone_number, template_name):
         "Content-Type": "application/json"
     }
     
+    # Cleaning phone number for Meta API
     clean_phone = phone_number.replace("+", "").replace(" ", "").strip()
 
     payload = {
@@ -32,7 +33,7 @@ def send_whatsapp_message(phone_number, template_name):
         "type": "template",
         "template": { 
             "name": template_name,
-            "language": { "code": "en_US" } 
+            "language": { "code": "en" } # 🟢 FIXED: 'en_US' changed to 'en' to match dashboard
         }
     }
 
@@ -42,6 +43,7 @@ def send_whatsapp_message(phone_number, template_name):
             print(f"✅ [SUCCESS] WhatsApp sent successfully to {clean_phone}!") 
             return True
         else:
+            # Printing full error to debug template name/language issues
             print(f"❌ [FAILED] WhatsApp API Error: {response.text}") 
             return False
     except Exception as e:
@@ -52,8 +54,9 @@ def send_whatsapp_message(phone_number, template_name):
 
 @router.get("/api/products")
 async def get_products(shop: str = None):
+    """Fetches inventory-level product data from Shopify."""
     if not shop: return {"products": []}
-    store = await shop_collection.find_one({"shop": shop})
+    store = await shop_collection.find_one({"shop": shop}) #
     if not store: return {"products": []}
     
     url = f"https://{shop}/admin/api/{SHOPIFY_API_VERSION}/products.json"
@@ -67,6 +70,7 @@ async def get_products(shop: str = None):
 
 @router.post("/api/subscribe")
 async def subscribe_lead(lead: LeadRequest):
+    """Saves a customer's phone number for back-in-stock alerts."""
     print(f"\n📝 [DEBUG] New Subscribe Request for: {lead.product_title} on {lead.shop}") 
     
     store = await shop_collection.find_one({"shop": lead.shop})
@@ -74,7 +78,7 @@ async def subscribe_lead(lead: LeadRequest):
         print("❌ [ERROR] Store not found in database.")
         return {"status": "error"}
     
-    # Check Real-time Stock
+    # Check Real-time Stock to avoid unnecessary subscriptions
     url = f"https://{lead.shop}/admin/api/{SHOPIFY_API_VERSION}/products/{lead.product_id}.json"
     headers = {"X-Shopify-Access-Token": store["access_token"]}
     r = requests.get(url, headers=headers)
@@ -88,24 +92,24 @@ async def subscribe_lead(lead: LeadRequest):
         print("🚫 [REJECT] Product is already in stock.")
         return {"status": "error", "message": "Product is already in stock!"}
     
-    # Save to Database (With Shop Name)
+    # Save lead to MongoDB with 'pending' status
     new_lead = lead.dict()
     new_lead["created_at"] = datetime.utcnow()
     new_lead["status"] = "pending"
     await leads_collection.insert_one(new_lead)
     print("💾 [SAVED] Customer saved to database.") 
     
-    # Send Welcome Message
+    # Send immediate confirmation message via WhatsApp
     send_whatsapp_message(lead.phone_number, template_name="subscription_confirmed")
     
     return {"status": "success", "message": "You will be notified!"}
 
-# 🟢 FINAL MULTI-STORE WEBHOOK
 @router.post("/api/webhooks/product_update")
 async def product_update_webhook(request: Request):
+    """Webhook listener that triggers alerts when stock is updated in Shopify."""
     print("\n\n🔔 -------- WEBHOOK RECEIVED (Multi-Store) --------") 
     try:
-        # 🟢 1. IDENTIFY THE SHOP (Header se pata lagayenge ke kaunsa store hai)
+        # Identify the shop domain from headers
         shop_domain = request.headers.get("X-Shopify-Shop-Domain")
         if not shop_domain:
             print("⚠️ No Shop Domain in Header. Skipping.")
@@ -113,26 +117,24 @@ async def product_update_webhook(request: Request):
 
         print(f"🏪 Shop Detected: {shop_domain}")
 
-        # 2. Receive Payload
         payload = await request.json()
         product_id = payload.get("id")
         
-        # 3. Check Inventory Level
+        # Calculate total stock across all variants
         variants = payload.get("variants", [])
         total_stock = sum(v.get("inventory_quantity", 0) for v in variants)
         
         print(f"📦 Product ID: {product_id} | New Stock: {total_stock}") 
         
-        # 4. If Stock is Back (> 0)
         if total_stock > 0:
             print("🚀 [ACTION] Stock > 0. Searching for waiting customers...") 
             
-            # 🟢 5. FIND CUSTOMERS FOR *THIS* SHOP ONLY
+            # Find all 'pending' leads for this specific shop and product
             pending_leads = await leads_collection.find(
                 {
                     "product_id": str(product_id), 
                     "status": "pending",
-                    "shop": shop_domain  # <--- SIRF IS STORE KE LOG
+                    "shop": shop_domain
                 }
             ).to_list(length=100)
             
@@ -142,9 +144,11 @@ async def product_update_webhook(request: Request):
                 for lead in pending_leads:
                     print(f"📲 [SENDING] Alert to: {lead['phone_number']}...")
                     
+                    # Using the approved restock template
                     success = send_whatsapp_message(lead.get("phone_number"), template_name="item_back_in_stock")
                     
                     if success:
+                        # Update status to 'notified' to prevent duplicate alerts
                         await leads_collection.update_one(
                             {"_id": lead["_id"]}, 
                             {"$set": {"status": "notified", "notified_at": datetime.utcnow()}}
@@ -154,7 +158,7 @@ async def product_update_webhook(request: Request):
                 print("😴 [INFO] No one waiting on this store.")
 
         else:
-            print("📉 [INFO] Stock is 0.")
+            print("📉 [INFO] Stock is still 0.")
             
         print("🔔 ---------------- END WEBHOOK ----------------\n")
         return {"status": "success"}
