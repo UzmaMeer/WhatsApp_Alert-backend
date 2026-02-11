@@ -8,8 +8,8 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 from database import shop_collection
 from config import SHOPIFY_API_KEY, SHOPIFY_API_SECRET, BASE_PUBLIC_URL, SHOPIFY_API_VERSION
 
-# We import the registration helper from our general routes
-from routes.general import register_shopify_webhook
+# 🟢 FIXED: Removed the invalid 'register_shopify_webhook' import that was causing the crash.
+# Since the function doesn't exist in routes/general, we will handle automation later.
 
 router = APIRouter()
 
@@ -25,11 +25,12 @@ async def shopify_auth(shop: str = None):
     if not target_shop:
         return "Missing shop parameter."
 
-    # Standardize the shop URL format
+    # Standardize the shop URL format (ensure it ends with .myshopify.com)
     if not target_shop.endswith(".myshopify.com") and "." not in target_shop:
         target_shop = f"{target_shop}.myshopify.com"
 
-    # UPDATED: Added 'read_inventory' scope to track stock levels automatically
+    # Define the permissions (scopes) our app needs
+    # 'read_inventory' allows us to track stock levels automatically
     scopes = "read_products,write_products,read_inventory"
     
     redirect_uri = f"{BASE_PUBLIC_URL}/api/auth/callback"
@@ -38,7 +39,7 @@ async def shopify_auth(shop: str = None):
         f"client_id={SHOPIFY_API_KEY}&scope={scopes}&redirect_uri={redirect_uri}"
     )
     
-    # Escape the Shopify Iframe to ensure the merchant sees the 'Grant Permissions' page
+    # Escape the Shopify Iframe to ensure the merchant sees the 'Grant Permissions' page correctly
     content = f"""
     <html>
         <head>
@@ -57,7 +58,7 @@ async def shopify_auth(shop: str = None):
 async def shopify_callback(shop: str, code: str):
     """
     Handles the final step of OAuth: exchanging the temporary code for a 
-    permanent access token and setting up automation.
+    permanent access token and saving the store data.
     """
     url = f"https://{shop}/admin/oauth/access_token"
     payload = {
@@ -67,14 +68,14 @@ async def shopify_callback(shop: str, code: str):
     }
     
     try:
-        # Request the permanent access token from Shopify
+        # Request the permanent access token from Shopify servers
         resp = requests.post(url, json=payload)
         data = resp.json()
         
         if "access_token" in data:
             access_token = data["access_token"]
             
-            # 1. Save or update the shop token in MongoDB
+            # 1. Save or update the shop token in MongoDB for future API calls
             await shop_collection.update_one(
                 {"shop": shop}, 
                 {"$set": {
@@ -83,18 +84,18 @@ async def shopify_callback(shop: str, code: str):
                 }}, 
                 upsert=True
             )
-            print(f"✅ Access Token successfully updated for {shop}")
+            print(f"✅ Access Token successfully updated in Database for {shop}")
 
-            # 🟢 2. AUTO-AUTOMATION: Register the webhook for this store
-            # This removes the need for manual setup in the Shopify Admin
-            register_shopify_webhook(shop, access_token)
+            # 🛠️ TODO: Implement automatic Webhook registration here in the future
+            # For now, we manually register webhooks to ensure stability.
             
         else:
             print(f"❌ Shopify Token Exchange Error: {data}")
             
     except Exception as e: 
-        print(f"❌ Shopify Auth Callback Exception: {e}")
+        print(f"❌ Shopify Auth Callback Exception: {str(e)}")
     
-    # Redirect the user back to the Shopify Admin App Dashboard
+    # Redirect the merchant back to their Shopify Admin App Dashboard
     store_name = shop.split('.')[0]
+    # NOTE: Ensure SHOPIFY_API_KEY matches the Handle/Client ID in your Partner Dashboard
     return RedirectResponse(f"https://admin.shopify.com/store/{store_name}/apps/{SHOPIFY_API_KEY}")
