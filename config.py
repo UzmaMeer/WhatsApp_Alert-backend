@@ -1,33 +1,28 @@
 import os
 from dotenv import load_dotenv
 
+# Load local .env for local testing
 load_dotenv()
 
 # --- Base Directories ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-VIDEO_DIR = os.path.join(BASE_DIR, "video")
-os.makedirs(VIDEO_DIR, exist_ok=True)
+# Note: VIDEO_DIR is no longer needed but kept as a placeholder if you store logs
 
 # --- Public URL Configuration ---
-BASE_PUBLIC_URL = os.getenv("BASE_PUBLIC_URL", "https://snakiest-edward-autochthonously.ngrok-free.dev")
+# 🟢 This MUST be your Railway URL so Shopify can send webhooks
+BASE_PUBLIC_URL = os.getenv("BASE_PUBLIC_URL", "https://whatsappalert-backend-production.up.railway.app")
 
 # --- Shopify Configuration ---
+# Used for authentication and fetching product data
 SHOPIFY_API_VERSION = "2024-01" 
 SHOPIFY_API_KEY = os.getenv("SHOPIFY_API_KEY")
 SHOPIFY_API_SECRET = os.getenv("SHOPIFY_API_SECRET")
 
-# --- Meta / Instagram Configuration ---
-META_CLIENT_ID = os.getenv("META_CLIENT_ID")
-META_CLIENT_SECRET = os.getenv("META_CLIENT_SECRET")
-IG_USER_ID = os.getenv("IG_USER_ID")
+# --- Database Configuration ---
+# Connection string for your MongoDB Cluster0
+MONGO_DETAILS = os.getenv("MONGO_DETAILS")
 
-# --- TikTok Configuration ---
-TIKTOK_CLIENT_KEY = os.getenv("TIKTOK_CLIENT_KEY")
-TIKTOK_CLIENT_SECRET = os.getenv("TIKTOK_CLIENT_SECRET")
-
-# --- AI Configuration ---
-gemini_api_key = os.getenv("GEMINI_API_KEY")
-
-# 🟢 NEW: WhatsApp Configuration (You were missing this!)
+# --- WhatsApp Configuration ---
+# These are required to send the actual restock alerts
 WA_PHONE_NUMBER_ID = os.getenv("WA_PHONE_NUMBER_ID") 
 WA_ACCESS_TOKEN = os.getenv("WA_ACCESS_TOKEN")
