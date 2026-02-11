@@ -1,43 +1,30 @@
 import os
+from dotenv import load_dotenv 
 from motor.motor_asyncio import AsyncIOMotorClient
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+load_dotenv() 
 
-# Get the MongoDB connection string from .env
-# If not found, it defaults to a local connection for safety
-MONGO_DETAILS = os.getenv("MONGO_DETAILS", "mongodb://localhost:27017")
+# 1. Load Config from .env
+MONGO_DETAILS = os.getenv("MONGO_DETAILS") 
 
-# Create the async database client
-client = AsyncIOMotorClient(MONGO_DETAILS)
+# 🟢 NEW: Get the DB name from .env (defaults to 'whatsapp_alert_db' if missing)
+MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "whatsapp_alert_db")
 
-# 🟢 UPDATE: Database name changed to 'whatsapp_alert'
-database = client.whatsapp_alert
+client_db = AsyncIOMotorClient(MONGO_DETAILS)
 
-# --- Collections Definitions ---
-video_jobs_collection = database.get_collection("video_jobs")
-social_collection = database.get_collection("social_accounts")
+# 🟢 UPDATED: Use the variable instead of a hardcoded string
+database = client_db[MONGO_DB_NAME]
+
+# --- COLLECTIONS ---
+
+# Stores Shopify Tokens
 shop_collection = database.get_collection("shopify_stores")
+
+# Stores Customer Subscriptions (Name, Phone, Product ID)
+leads_collection = database.get_collection("back_in_stock_leads")
+
+# Stores Social Media Tokens
+social_collection = database.get_collection("social_accounts")
+
+# Stores Brand/App Settings
 brand_collection = database.get_collection("brand_settings")
-publish_collection = database.get_collection("publish_jobs")
-review_collection = database.get_collection("user_reviews")
-
-# Collection for WhatsApp leads
-leads_collection = database.get_collection("leads")
-
-# --- Helper Functions ---
-
-async def check_db_connection():
-    """
-    Checks if the database connection is active.
-    Returns True if connected, False otherwise.
-    """
-    try:
-        # The 'ping' command is lightweight and confirms the server is reachable
-        await client.admin.command('ping')
-        print(f"✅ Successfully connected to MongoDB at: {MONGO_DETAILS}")
-        return True
-    except Exception as e:
-        print(f"❌ Could not connect to MongoDB: {e}")
-        return False

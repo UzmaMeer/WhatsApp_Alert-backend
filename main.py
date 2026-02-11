@@ -1,67 +1,67 @@
+import os
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
-from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
-import logging
 
-# --- Import Config and Routes ---
+# Import project-specific configurations and routes
 from config import BASE_PUBLIC_URL
-# 🟢 CRITICAL: We import both auth and general routes here
-# Make sure you have a 'routes' folder with auth.py and general.py
-from routes import auth, general   
+from routes import auth, general
 from database import shop_collection
-
-# --- 🟢 SYSTEM START PRINT ---
-print("\n\n🛑 SYSTEM RESTARTING: Loading Routes...\n")
 
 app = FastAPI()
 
-# --- Middleware Setup ---
-origins = ["*"]  # Allow all for testing (Frontend se connect karne ke liye zaroori)
+# --- Middleware Configuration ---
+# CORS is required so your deployed frontend can communicate with your Ngrok backend
 app.add_middleware(
     CORSMiddleware, 
-    allow_origins=origins, 
+    allow_origins=[
+        "http://localhost:3000",
+        "https://shopify-alert.web.app",  # Your live frontend URL
+        "https://admin.shopify.com"
+    ], 
     allow_methods=["*"], 
     allow_headers=["*"], 
     allow_credentials=True
 )
 
-# Session aur HTTPS Proxy Headers (Render ke liye zaroori)
-app.add_middleware(SessionMiddleware, secret_key="SECRET_KEY", https_only=True)
-app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+# Session management for Shopify authentication flow
+app.add_middleware(
+    SessionMiddleware, 
+    secret_key="UZMA_WHATSAPP_PROJECT_SECURE_999", 
+    https_only=True
+)
 
-# --- 🟢 REGISTER ROUTERS (Connecting the files) ---
-# This is what fixes the 404 Error
+# --- Route Registration ---
+# Include authentication logic and general API endpoints
 app.include_router(auth.router)
 app.include_router(general.router)
 
-# --- 🟢 DEBUG: Print Routes on Startup ---
-@app.on_event("startup")
-async def show_routes():
-    print("\n🗺️  AVAILABLE ROUTES (Verify these exist):")
-    for route in app.routes:
-        if hasattr(route, "path"):
-             # Print full URL for easy clicking
-            print(f"   👉 {BASE_PUBLIC_URL}{route.path}")
-    print("\n✅ System Ready! Waiting for requests...\n")
-
 # --- Root Endpoint ---
 @app.get("/")
-async def home(request: Request, shop: str = None): 
+async def home(request: Request, shop: str = None):
     """
-    Entry point for the Shopify App.
+    Main entry point. It checks if the store is installed.
+    If yes, it redirects to the live React interface.
+    If no, it starts the Shopify OAuth installation.
     """
-    if shop:
-        # Simple confirmation page for embedded app
-        return HTMLResponse(f"""
-            <html>
-                <head><title>Uzma's App</title></head>
-                <body style="font-family: sans-serif; padding: 50px; text-align: center;">
-                    <h1>✅ App is Running for {shop}</h1>
-                    <p>Webhooks are active. You can close this tab.</p>
-                </body>
-            </html>
-        """)
-    # If no shop param, redirect to auth to be safe
-    return RedirectResponse(url="/api/auth")
+    
+    # Optional: Use '?force_auth=true' in URL to re-trigger the login process
+    force_auth = request.query_params.get("force_auth") == "true"
+
+    if shop and not force_auth:
+        # Check if the shop exists in your MongoDB database
+        existing_shop = await shop_collection.find_one({"shop": shop})
+        
+        if existing_shop and existing_shop.get("access_token"):
+            # SUCCESS: Redirect directly to your live deployed frontend
+            # No need for local 'build' folder copying anymore
+            return RedirectResponse(f"https://shopify-alert.web.app?shop={shop}")
+
+    # INSTALLATION: Redirect to the OAuth route if store is not found
+    return RedirectResponse(url=f"/api/auth?shop={shop}" if shop else "/api/auth")
+
+# --- Server Status ---
+@app.get("/status")
+async def status():
+    return {"status": "Backend is active and linked to shopify-alert.web.app"}
