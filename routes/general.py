@@ -13,7 +13,7 @@ router = APIRouter()
 # --- HELPER: Send WhatsApp Message ---
 def send_whatsapp_message(phone_number, template_name):
     """
-    Sends a WhatsApp message using Meta/Facebook templates.
+    Sends a WhatsApp message and prints the specific status for each number.
     """
     url = f"https://graph.facebook.com/v18.0/{WA_PHONE_NUMBER_ID}/messages"
     headers = {
@@ -35,10 +35,11 @@ def send_whatsapp_message(phone_number, template_name):
 
     try:
         response = requests.post(url, headers=headers, json=payload)
-        print(f"📡 WhatsApp API Status: {response.status_code} for {template_name}")
+        # 📢 LOG: Shows the exact status for THIS specific phone number
+        print(f"📩 [WHATSAPP API] Sent to: {clean_phone} | Status: {response.status_code} | Template: {template_name}")
         return response.status_code == 200
     except Exception as e:
-        print(f"❌ WhatsApp API Exception: {str(e)}")
+        print(f"❌ [WHATSAPP ERROR] Failed for {clean_phone}: {str(e)}")
         return False
 
 # --- ROUTES ---
@@ -61,13 +62,9 @@ async def get_products(shop: str = None):
 
 @router.post("/api/subscribe")
 async def subscribe_lead(lead: LeadRequest):
-    """
-    Registers a new lead and sends a confirmation message.
-    Prevents duplicate subscriptions.
-    """
+    """Registers new lead and prevents duplicates."""
     p_id = str(lead.product_id)
     
-    # 1. Duplicate Check: Prevent multiple 'pending' alerts for the same item
     existing_lead = await leads_collection.find_one({
         "phone_number": lead.phone_number,
         "product_id": p_id,
@@ -76,57 +73,68 @@ async def subscribe_lead(lead: LeadRequest):
     })
 
     if existing_lead:
-        print(f"🔁 [REJECT] {lead.phone_number} already in waitlist for {p_id}")
+        # Verified working in logs:
+        print(f"🔁 [REJECT] {lead.phone_number} is already on waitlist for {p_id}")
         return {"status": "already_subscribed", "message": "You are already on the waitlist!"}
 
-    # 2. Verify stock (Safety Check)
     store = await shop_collection.find_one({"shop": lead.shop})
     if not store: return {"status": "error", "message": "Store not found."}
     
-    # 3. Save Lead to Database
     new_lead = lead.dict()
     new_lead.update({"product_id": p_id, "status": "pending", "created_at": datetime.utcnow()})
     await leads_collection.insert_one(new_lead)
     
-    # 🟢 4. TRIGGER: Confirmation Message (Message 1)
-    # Corrected Template Name
+    # Message 1: Confirmation
     send_whatsapp_message(lead.phone_number, template_name="subscription_confirmed")
     
-    return {"status": "success", "message": "Subscription successful! You will be notified."}
+    return {"status": "success", "message": "Subscription successful!"}
 
 @router.post("/api/webhooks/product_update")
 async def product_update_webhook(request: Request):
     """
-    Notifies all pending customers when an item returns to stock.
+    Notifies all pending customers from the list saved in DB.
     """
-    print("\n🔔 -------- WEBHOOK RECEIVED --------") 
+    print("\n🔔 -------- WEBHOOK RECEIVED FROM SHOPIFY --------") 
     try:
         shop_domain = request.headers.get("X-Shopify-Shop-Domain")
         payload = await request.json()
         product_id = str(payload.get("id"))
         
-        # Calculate total quantity across all variants
         variants = payload.get("variants", [])
         total_stock = sum(v.get("inventory_quantity", 0) for v in variants)
         
+        print(f"🏪 Shop: {shop_domain} | 📦 Product ID: {product_id} | 📈 New Stock: {total_stock}")
+
         if total_stock > 0:
-            # Notify everyone waiting for this product
+            # 1. Get the list of ALL customers waiting for this product
             pending_leads = await leads_collection.find({
                 "product_id": product_id, "status": "pending", "shop": shop_domain
             }).to_list(length=1000)
             
+            # 📢 LOG: Shows how many people were found in DB
+            print(f"🎯 Found {len(pending_leads)} customers in DB waiting for this product.")
+
+            # 2. Loop through the list and notify each one
             for lead in pending_leads:
-                # 🟢 TRIGGER: Restock Alert Message (Message 2)
-                # Corrected Template Name
-                success = send_whatsapp_message(lead.get("phone_number"), template_name="item_back_in_stock")
+                customer_phone = lead.get("phone_number")
+                
+                # TRIGGER: Restock Alert
+                success = send_whatsapp_message(customer_phone, template_name="item_back_in_stock")
                 
                 if success:
-                    # Update status to notified to prevent repeat alerts
+                    # 📢 LOG: Confirming success for this specific number
+                    print(f"✅ DB Update: Customer {customer_phone} successfully notified.")
                     await leads_collection.update_one(
                         {"_id": lead["_id"]}, 
                         {"$set": {"status": "notified", "notified_at": datetime.utcnow()}}
                     )
+                else:
+                    # 📢 LOG: Alerting if Meta API failed for this specific number
+                    print(f"⚠️ Meta API Failure: Message could not reach {customer_phone}")
+        else:
+            print("📉 Stock update received, but total quantity is still 0.")
         
+        print("🔔 -------- WEBHOOK PROCESSED SUCCESSFULLY --------\n")
         return {"status": "success"}
     except Exception as e:
         print(f"❌ Webhook Error: {str(e)}") 
